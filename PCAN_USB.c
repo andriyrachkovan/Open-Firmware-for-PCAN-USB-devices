@@ -47,6 +47,7 @@ bool conf_START=false;
 bool step_config_bulk_82=false;
 bool step_config_bulk_1=false;
 uint8_t current_Endpoint=0xFF;
+
 int main(void)
 {
     SetupHardware_();
@@ -58,15 +59,82 @@ for(i=0;i<16;i++)USBtoUSART_Buffer_Data_[i]=0xFF;//зачищаем наш пр�
 
 
 
+wdt_enable(WDTO_500MS);
 bool step_out1=false;
 bool step_out2=false;
 bool step_in1=false;
 bool step_out3=false;
 bool step_in2=false;
 bool step_out4=false;
-
 for (;;)
 {
+	wdt_reset();
+	if(!step_Vendor)goto end_cycle;
+	Endpoint_SelectEndpoint_(1);
+	if(step_out1)goto end_out1;
+	while(!Endpoint_IsOUTReceived_());//ждем OUT пакет
+	while(!Endpoint_IsReadWriteAllowed_());//ждем готовность буфера
+	i=0;
+	while(Endpoint_IsReadWriteAllowed_())//читаем пока не заполним весь буфер
+		{
+			USBtoUSART_Buffer_Data_[i++]=Endpoint_Read_8_();
+		}
+	Endpoint_ClearOUT_();//подтверждаем его прием
+	if((USBtoUSART_Buffer_Data_[0]==9)&&(USBtoUSART_Buffer_Data_[1]==1))//знак конца пакетов OUT и перемены направления
+	{
+		step_out1=true;
+		UECFG0X|=1;//простое изменение направления с OUT на IN
+		step_in1=false;
+	}
+	if((USBtoUSART_Buffer_Data_[0]==9)
+		&&(USBtoUSART_Buffer_Data_[1]==1)	
+		&&(USBtoUSART_Buffer_Data_[2]==0)
+		&&(USBtoUSART_Buffer_Data_[3]==0))//знак конца пакетов OUT и ответа 9
+	{
+		USBtoUSART_Buffer_Data_[3]=9;
+	}
+	if((USBtoUSART_Buffer_Data_[0]==9)
+		&&(USBtoUSART_Buffer_Data_[1]==2)
+		&&(USBtoUSART_Buffer_Data_[2]==0)
+		&&(USBtoUSART_Buffer_Data_[3]==1)) //знак конца общения с драйвером
+	{
+		LEDS_OFF;
+		if(UDFNUML>92)LEDS_ON;
+		wdt_disable();
+		goto end_cycle;
+	}	
+end_out1:	
+	if(step_in1)goto end_cycle;
+	while(!Endpoint_IsINReady_());//ждем пакета IN1
+	while(!Endpoint_IsReadWriteAllowed_());//ждем готовность буфера
+	i=0;
+	while(Endpoint_IsReadWriteAllowed_())
+	{
+		Endpoint_Write_8_(USBtoUSART_Buffer_Data_[i++]);//заполняем буфер данными	
+	}
+	Endpoint_ClearIN_();//подтверждаем заполнение
+	while (!(UEINTX &0b10000001));//убедимся что буфер сброшен
+	step_in1=true;
+	UECFG0X&=0b11111110;//простое изменение направления с IN на OUT
+	step_out1=false;
+	
+end_cycle:	asm("nop");
+}
+
+
+
+
+
+
+
+
+
+
+
+//  ПЕРВЫЙ РАБОЧИЙ ЦИКЛ ДО МОМЕНТА ЗАПУСКА ПРОГРАММЫ //  //  //  //  //  //  //  //  //  //  //  //  //
+/*for (;;)
+{
+	wdt_reset();
 	if(!step_Vendor)goto end_cycle;
 	Endpoint_SelectEndpoint_(1);
 	if(step_out1)goto end_out1;
@@ -150,14 +218,20 @@ end_in2:
 	if(USBtoUSART_Buffer_Data_[1]==1)//знак конца пакетов OUT и перемены направления
 	{
 		step_in2=false;
-//		step_out4=true;	
 		UECFG0X|=1;//простое изменение направления с OUT на IN
 	}
-    LEDS_ON;
-
+	if((USBtoUSART_Buffer_Data_[1]==2)
+		&&USBtoUSART_Buffer_Data_[2]==0
+		&&USBtoUSART_Buffer_Data_[3]==1) //знак конца пакетов OUT и все
+		{
+			step_in2=true;
+			step_out4=true;	
+			LEDS_ON;
+			wdt_disable();
+		}
 end_out4:	
 end_cycle:	asm("nop");
-}
+}*/
 
 
 
