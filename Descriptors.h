@@ -1,4 +1,8 @@
+		#include <avr/io.h>		
 		#include <avr/pgmspace.h>
+					#define SERIAL_2X_UBBRVAL(Baud) ((((F_CPU / 8) + (Baud / 2)) / (Baud)) - 1)
+
+			#define SERIAL_UBBRVAL(Baud)    ((((F_CPU / 16) + (Baud / 2)) / (Baud)) - 1)
 		#include <stdbool.h>
 		#include <string.h>
 		#include <avr/interrupt.h>
@@ -7,6 +11,17 @@
         #define F_CPU         16000000UL
 		#include <util/delay.h>
 ///////////////////////////////////////////////////////////
+const uint8_t next_is_IN_1[]={0x9,0x1};
+const uint8_t start_IN_1[]={0x9,0x1,0x0,0x0};
+const uint8_t end_bulk_1[]={0x9,0x2,0x0,0x1};
+const uint8_t next_is_bulk_2[]={0x3,0x2,0x1,0x0};
+uint32_t bulks=0;
+uint32_t timer_INs=0;
+uint32_t timer_GENERAL=0;
+uint32_t timer_LEDS=0;
+uint32_t timer_LED1=0;
+uint32_t timer_LED2=0;
+
         #define me_F_CPU         16000000UL
 		#define AVR__DDR_PORT DDRD
 		#define AVR_LINE_PORT PORTD
@@ -16,6 +31,9 @@
 		#define LED1_ON AVR_LINE_PORT  &=0xDF
 		#define LED2_OFF AVR_LINE_PORT |=0x10
 		#define LED1_OFF AVR_LINE_PORT |=0x20
+		#define LEDS_ALTERNATE PORTD ^= (1 << PD4) | (1 << PD5)
+		#define LED1_ALTERNATE PORTD ^= (1 << PD5)
+		#define LED2_ALTERNATE PORTD ^= (1 << PD4)
 		#define USB_STREAM_TIMEOUT_MS_       100
 		#define AVR_RESET_LINE_MASK_ (1 << 7)
 		#define MIN_(x, y)               (((x) < (y)) ? (x) : (y))
@@ -142,6 +160,7 @@ enum USB_Interrupts_t_
 	USB_INT_SOFI_    = 5,
 	USB_INT_RXSTPI_  = 6,
 	USB_INT_TXINI_  = 7,
+	USB_INT_RXOUTI_  = 8,
 	};
 enum USB_Modes_t_
 	{
@@ -557,4 +576,3 @@ uint8_t my_data_bulk[My_BULK_size];
 
 //				_delay_ms(10);
 //			Endpoint_ConfigureEndpoint_(0x81, 2, 16, 1);			
-//	if()LEDS_ON;
