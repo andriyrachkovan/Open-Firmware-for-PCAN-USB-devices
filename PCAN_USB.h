@@ -1,10 +1,25 @@
 		#include "Descriptors.h"
-bool step_Vendor;
-		
+//bool	abort_=false;
+bool	step_Vendor=false;
+bool	step_out1=false;
+bool	step_in1=false;
+bool point_is_activated=false;
+static inline void Serial_Init(const uint32_t BaudRate,const bool DoubleSpeed);
+static inline void Serial_SendByte(const char DataByte);
+static inline bool Serial_IsSendReady(void);
+static inline bool Serial_IsSendComplete(void);
+static inline int16_t Serial_ReceiveByte(void);
+static inline bool Serial_IsCharReceived(void);
+void PrintInt(uint16_t int_val);
+void PrintIntDec(uint16_t int_val);
+
+uint8_t		current_endpoint=1;
+
+bool my_state=false;	
 static my_RingBuffer_t USBtoUSART_Buffer_;
-static uint8_t      USBtoUSART_Buffer_Data_[My_BULK_size];
+static uint8_t      USBtoUSART_Buffer_Data_[64];
 static my_RingBuffer_t USARTtoUSB_Buffer_;
-static uint8_t      USARTtoUSB_Buffer_Data_[My_BULK_size];
+static uint8_t      USARTtoUSB_Buffer_Data_[64];
 void GlobalInterruptDisable_(void);
 uint8_t TEMPLATE_FUNC_NAME_ (const void* const Buffer,uint16_t Length);
 void USB_Device_SetDeviceAddress_(const uint8_t Address);
@@ -268,6 +283,8 @@ bool USB_INT_HasOccurred_(const uint8_t Interrupt)
 						return (UEINTX & (1 << RXSTPI));
 					case USB_INT_TXINI_:
 						return (UEINTX & (1 << TXINI));
+					case USB_INT_RXOUTI_:
+						return (UEINTX & (1 << RXOUTI));
 					default:
 						return false;
 				}
@@ -289,6 +306,8 @@ bool USB_INT_IsEnabled_(const uint8_t Interrupt)
 						return (UEIENX & (1 << RXSTPE));
 					case USB_INT_TXINI_:
 						return (UEIENX & (1 << TXINE));
+					case USB_INT_RXOUTI_:
+						return (UEIENX & (1 << RXOUTE));
 					default:
 						return false;
 				}
@@ -382,7 +401,6 @@ void Device_ProcessControlRequest_(My_USB_Info_Device_t* const my_InterfaceInfo)
 			}
 			break;
 		case CDC_REQ_SetLineEncoding_://0x20
-		//LEDS_ON;
 			if (my_USB_ControlRequest.my_bmRequestType == (REQDIR_HOSTTODEVICE_ | REQTYPE_CLASS_ | REQREC_INTERFACE_))
 			{Endpoint_ClearSETUP_();
 				while (!(Endpoint_IsOUTReceived_()))
@@ -423,7 +441,6 @@ void USB_Device_ProcessControlRequest_(void)
 		uint8_t my_bmRequestType = my_USB_ControlRequest.my_bmRequestType;
 		if(my_bmRequestType==my_REQ_VendorRequest)my_USB_ControlRequest.my_bRequest=my_REQ_VendorRequest;
 		
-		//if(my_bmRequestType==0x0&&my_USB_ControlRequest.my_bRequest==9)LEDS_ON;
 		
 		switch (my_USB_ControlRequest.my_bRequest)
 			{
@@ -453,10 +470,6 @@ void USB_Device_ProcessControlRequest_(void)
 					USB_Device_GetDescriptor_();
 					}
 				break;
-			//case REQ_GetConfiguration_:LEDS_ON;
-			//	if (my_bmRequestType == (REQDIR_DEVICETOHOST_ | REQTYPE_STANDARD_ | REQREC_DEVICE_))
-			//	  USB_Device_GetConfiguration_();
-			// 	break;
 			case REQ_SetConfiguration_:
 				if (my_bmRequestType == (REQDIR_HOSTTODEVICE_ | REQTYPE_STANDARD_ | REQREC_DEVICE_))
 				{
@@ -472,6 +485,7 @@ void USB_Device_ProcessControlRequest_(void)
 				Endpoint_ClearIN_();
 				Endpoint_ClearStatusStage_();	
 				step_Vendor=true;
+				current_endpoint=1;
 				break;
 				
 			default:
@@ -550,7 +564,6 @@ void CDC_Device_USBTask_(My_USB_Info_Device_t* const my_InterfaceInfo)
 
 	if (Endpoint_IsINReady_())
 		{
-			//LEDS_ON;
 		my_Device_Flush_(my_InterfaceInfo);
 		}
 }
@@ -624,7 +637,6 @@ void my_Device_SendPacket(My_USB_Info_Device_t* const my_InterfaceInfo, uint8_t*
 				Endpoint_SelectEndpoint_(0x81);
 			if (Endpoint_IsINReady_() && Endpoint_IsReadWriteAllowed_())
 			{	
-				//LEDS_ON;
 				uint8_t i;
 				for (i = 0; i < 16; ++i)
 				{
@@ -711,7 +723,6 @@ void EVENT_USB_Device_ConfigurationChanged_(void)
 	bool ConfigSuccess = true;
 	ConfigSuccess &= Device_ConfigureEndpoints_(&my_Virtual_Interface);
 
-//LEDS_ON;
 }
 
 
@@ -924,6 +935,8 @@ void USB_INT_Enable_(const uint8_t Interrupt)
 								break;
 		case USB_INT_TXINI_:	UEIENX |= (1 << TXINE);
 								break;
+		case USB_INT_RXOUTI_:	UEIENX |= (1 << RXOUTE);
+								break;
 		
 		default:	break;
 		}
@@ -1018,6 +1031,7 @@ bool Endpoint_ConfigureEndpoint_Prv_(const uint8_t Number,
 bool Device_ConfigureEndpoints_(My_USB_Info_Device_t* const my_InterfaceInfo)
 {
 	Endpoint_ConfigureEndpoint_(0x82, 2,64, 1);
+	//USB_INT_Disable_(USB_INT_TXINI_);
 	Endpoint_ConfigureEndpoint_(0x1, 2, 16, 1);
 
 	return true;
@@ -1248,7 +1262,6 @@ void USB_Device_GetDescriptor_(void)
 
 void USB_Device_GetStatus_(void)
 {
-	//LEDS_ON;
 	uint8_t CurrentStatus = 0;
 	switch (my_USB_ControlRequest.my_bmRequestType)
 	{
@@ -1384,6 +1397,140 @@ uint8_t Endpoint_Write_Control_Stream_LE_ (const void* const Buffer,uint16_t Len
 		else if (Endpoint_IsSETUPReceived_())
 		  return ENDPOINT_RWCSTREAM_HostAborted_;
 	}
+
+	return ENDPOINT_RWCSTREAM_NoError_;
+}
+			
+void timer_leds(uint32_t timeout)
+{
+	if(timer_LEDS++==timeout)
+	{
+		timer_LEDS=0;		
+		LEDS_ALTERNATE;
+	}
+	return;
+}			
+void timer_led1(uint32_t timeout)
+{
+	if(timer_LED1++==timeout)
+	{
+		timer_LED1=0;		
+		LED1_ALTERNATE;
+	}
+	return;
+}			
+void timer_led2(uint32_t timeout)
+{
+	if(timer_LED2++==timeout)
+	{
+		timer_LED2=0;		
+		LED2_ALTERNATE;
+	}
+	return;
+}			
+
+static inline void Serial_Init(const uint32_t BaudRate,const bool DoubleSpeed)
+	{
+		UBRR1  = (DoubleSpeed ? SERIAL_2X_UBBRVAL(BaudRate) : SERIAL_UBBRVAL(BaudRate));
+		UCSR1C = ((1 << UCSZ11) | (1 << UCSZ10));
+		UCSR1A = (DoubleSpeed ? (1 << U2X1) : 0);
+		UCSR1B = ((1 << TXEN1)  | (1 << RXEN1));
+		DDRD  |= (1 << 3);
+		PORTD |= (1 << 2);
+	}
+static inline void Serial_SendByte(const char DataByte)
+	{
+		while (!(Serial_IsSendReady()));
+		UDR1 = DataByte;
+	}
+static inline bool Serial_IsSendReady(void)
+	{
+		return ((UCSR1A & (1 << UDRE1)) ? true : false);
+	}
+static inline bool Serial_IsSendComplete(void)
+	{
+		return ((UCSR1A & (1 << TXC1)) ? true : false);
+	}
+static inline int16_t Serial_ReceiveByte(void)
+	{
+		if (!(Serial_IsCharReceived()))return -1;
+		return UDR1;
+	}
+void UART_TransmitString(const char* String) {
+    while (*String) {
+        while (!(UCSR1A & (1 << UDRE1)));
+        UDR1 = *String++;
+    }
+}
+void PrintBuffer(const uint8_t* buffer, size_t size) {
+	char ABC[]={"0123456789ABCDEF"};
+	size_t i;
+        Serial_SendByte('{');
+    for ( i= 0; i < size; ++i) {
+        Serial_SendByte('0');
+        Serial_SendByte('x');
+        Serial_SendByte(ABC[buffer[i]>>4]);
+        Serial_SendByte(ABC[buffer[i]&0xF]);
+        if(i<size-1)Serial_SendByte(',');
+    }
+        Serial_SendByte('}');
+        Serial_SendByte(';');
+
+}
+
+void PrintInt(uint16_t int_val) {
+	char ABC[]={"0123456789ABCDEF"};
+    Serial_SendByte(ABC[(int_val>>12)&0xF]);
+    Serial_SendByte(ABC[(int_val>>8)&0xF]);
+    Serial_SendByte(ABC[(int_val>>4)&0xF]);
+    Serial_SendByte(ABC[(int_val>>0)&0xF]);
+}
+
+
+void PrintIntDec(uint16_t int_val) {
+    char ABC[] = "0123456789";
+    uint8_t i;
+    for (i = 0; i < 5; ++i) {
+        uint16_t divisor = 1;
+		uint8_t j;
+        for (j = 0; j < 4 - i; ++j) {
+            divisor *= 10;
+        }
+        Serial_SendByte(ABC[(int_val / divisor) % 10]);
+    }
+}
+
+
+void PrintIntDec_(uint16_t int_val) {
+	char ABC[]={"0123456789"};
+	uint32_t dec4=(int_val>>12)&0xF;
+	uint32_t dec3=(int_val>>8)&0xF;
+	uint32_t dec2=(int_val>>4)&0xF;
+	uint32_t dec1=(int_val>>0)&0xF;
+	uint32_t dec=(dec4<<12)+(dec3<<8)+(dec2<<4)+dec1;
+    uint32_t dec50=dec/10000;
+    uint32_t dec40=(dec/1000)-dec50*10;
+    uint32_t dec30=(dec/100)-dec50*100-dec40*10;
+    uint32_t dec20=(dec/10)-dec50*1000-dec40*100-dec30*10;
+    uint32_t dec10=(dec/1)-dec50*10000-dec40*1000-dec30*100-dec20*10;
+    Serial_SendByte(ABC[dec50]);
+    Serial_SendByte(ABC[dec40]);
+    Serial_SendByte(ABC[dec30]);
+    Serial_SendByte(ABC[dec20]);
+    Serial_SendByte(ABC[dec10]);
+	return;
+}
+
+
+
+
+
+
+static inline bool Serial_IsCharReceived(void)
+	{
+		return ((UCSR1A & (1 << RXC1)) ? true : false);
+	}
+
 
 	return ENDPOINT_RWCSTREAM_NoError_;
 }
