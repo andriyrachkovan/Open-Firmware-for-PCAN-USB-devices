@@ -4,9 +4,15 @@
 #include <stdbool.h>
 #include <string.h>
 #include <avr/wdt.h>
-
-
 #define F_CPU         16000000UL
+#include <util/delay.h>
+
+#define CLEAR_OUT 0b01111011
+#define CLEAR_IN 0b01111110
+#define OUT_MASK 0b00000100 
+#define IN_MASK 0b00000001 
+#define IDtoID(x,y) (((((y&0x0F)<<4)|(x>>4))<<8)|(((x&0x0F)<<4)|((y>>4)&0xF)))<<1	
+#define SECuNDa 1000000
 #define AVR__DDR_PORT DDRD
 #define AVR_LINE_PORT PORTD
 #define LEDS_ON AVR_LINE_PORT  &=0xCF
@@ -68,14 +74,18 @@ uint8_t Endpoint_Write_Control_PStream_LE_(const void* const Buffer,uint16_t Len
 uint8_t Endpoint_BytesToEPSizeMask_(const uint16_t Bytes);
 
 uint16_t CALLBACK_USB_GetDescriptor_(const uint16_t my_wValue,const uint16_t my_wIndex,void** const  DescriptorAddress);
-uint16_t p_cont=0;
-
 uint8_t I_ring=0;
 uint8_t U_ring=0;
 uint8_t      USBtoUSART_Buffer_Data_[]=
 {
-	0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
-	0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+	0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0, 
+	0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0, 
+	0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+	0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+	0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+	0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+	0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+	0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
 };
 char ring_buffer[]=
 {
@@ -88,32 +98,24 @@ char ring_buffer[]=
 	'7','n','n','n','n','n','n','n', 'n','n','n','n','n','n','n','n', 'n','n','n','n','n','n','n','n', 'n','n','n','n','n','n','7','\n',
 	'8','n','n','n','n','n','n','n', 'n','n','n','n','n','n','n','n', 'n','n','n','n','n','n','n','n', 'n','n','n','n','n','n','8',0x0,
 	};
-char ring_[]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,};
-
-uint32_t timer_LEDS=0;
-uint32_t timer_LED1=0;
-uint32_t timer_LED2=0;
-
+uint8_t step=0;
+volatile uint32_t total_micros=0;
+volatile uint32_t total_micros_DIV10=0;
+volatile uint16_t frames=0;
+volatile uint16_t prox_frame_number=0;
+volatile uint16_t frame_number=0;
+volatile uint8_t microbloks=0;
+uint16_t total_micros_DIV16;
+bool time_token_loaded=false;
+bool data_token_enabled=false;
 
 bool Serial_IsSendReady_(void)
 	{
 	return ((UCSR1A & (1 << UDRE1)) ? true : false);
 	}
-bool Endpoint_IsConfigured_(void)
-	{
-	return ((UESTA0X & (1 << CFGOK)) ? true : false);
-	}
 bool Endpoint_IsINReady_(void)
 	{
 	return ((UEINTX & (1 << TXINI)) ? true : false);
-	}
-bool Endpoint_IsINReceived_(void)
-	{
-    return ((UEINTX & (1 << TXINI)) ? true : false);
-	}
-bool USB_Device_IsAddressSet_(void)
-	{
-	return (UDADDR & (1 << ADDEN));
 	}
 bool Endpoint_IsSETUPReceived_(void)
 	{
@@ -180,6 +182,7 @@ void Endpoint_ClearStatusStage_(void)
 
 void USB_Device_ProcessControlRequest_(void)
 	{
+	uint8_t i;	
 	uint8_t* RequestHeader = (uint8_t*)&my_USB_ControlRequest;
 	uint8_t RequestHeaderByte;
 	for (RequestHeaderByte = 0; RequestHeaderByte < sizeof(my_USB_ControlRequest); RequestHeaderByte++)
@@ -222,14 +225,15 @@ void USB_Device_ProcessControlRequest_(void)
 											Endpoint_ClearStatusStage_();
 											USB_DeviceState_ = DEVICE_STATE_Configured_;
 											Endpoint_ConfigureEndpoint_(0x82, 2,64, 1);
+											UEIENX=OUT_MASK;//|(1<<NAKOUTE)|(1<<FLERRE)|(1<<STALLEDE);//|(1<<NAKINE)
 											Endpoint_ConfigureEndpoint_(0x1, 2, 16, 1);
+											UEIENX=OUT_MASK;
 											break;
 			case my_REQ_VendorRequest:
-											UEINTX &= ~(1 << RXSTPI);//Endpoint_ClearSETUP_();
-											uint8_t i_Vendor_1;
-											for(i_Vendor_1=0;i_Vendor_1<sizeof(my_STRING_Vendor);i_Vendor_1++)
-											Endpoint_Write_8_(my_STRING_Vendor[i_Vendor_1]);
-											UEINTX &= ~((1 << TXINI) | (1 << FIFOCON));//Endpoint_ClearIN_();
+											UEINTX &= ~(1 << RXSTPI);
+											for(i=0;i<16;i++)
+												UEDATX=pgm_read_byte(&my_STRING_Vendor[i]);
+											UEINTX &= ~((1 << TXINI) | (1 << FIFOCON));
 											Endpoint_ClearStatusStage_();	
 											break;
 				
@@ -329,19 +333,17 @@ void Endpoint_ConfigureEndpoint_(const uint8_t Address,
 		UECONX &= ~(1 << EPEN);//дизактивация точки
 		UECFG1X = 0;  // Сброс ALLOC
 		UECONX |= (1 << EPEN);//активация точки
-		//UECFG0X=(Type<<6)|(Address>>7);//   тип  |  направление
-		UECFG0X = (Type << 6) | ((Address & 0x80) ? (1 << 0) : 0);  // Тип и направление
-		uint8_t _Size;
+		UECFG0X=(Type<<6)|(Address>>7);//   тип  |  направление
+		//UECFG0X = (Type << 6) | ((Address & 0x80) ? (1 << 0) : 0);  // Тип и направление
+		uint8_t _Size=0b110010;
 		switch(Size)
 		{
 			case 16:_Size=0b10010;
 			break;
 			case 64:_Size=0b110010;
 			break;
-			default:
-            _Size = 0;  // Добавлено значение по умолчанию
-            break;
 		}
+		UECFG1X=0;
 		UECFG1X=_Size;//размер    ,   количество банков равно 1,   разрешает ALLOC
 		UEINTX=0;
 		UEIENX=0;
@@ -418,48 +420,6 @@ void USB_Device_GetDescriptor_(void)
 	Endpoint_Write_Control_PStream_LE_(DescriptorPointer, DescriptorSize);
 	Endpoint_ClearOUT_();
 }
-void timer_leds(uint32_t timeout)
-{
-	if(timer_LEDS++==timeout)
-	{
-		timer_LEDS=0;		
-		LEDS_ALTERNATE;
-	}
-	return;
-}			
-void timer_led1(uint32_t timeout)
-{
-	if(timer_LED1++==timeout)
-	{
-		timer_LED1=0;		
-		LED1_ALTERNATE;
-	}
-	return;
-}			
-void timer_led1_TX(uint32_t timeout)
-{
-	if(timer_LED1++==timeout)
-	{
-		timer_LED1=0;		
-		LED1_ALTERNATE;
-		if(ring_buffer[U_ring]!=0x0)
-			{
-				UDR1=ring_buffer[U_ring];
-				U_ring++;
-			}
-
-	}
-	return;
-}			
-void timer_led2(uint32_t timeout)
-{
-	if(timer_LED2++==timeout)
-	{
-		LED2_ALTERNATE;
-		timer_LED2=0;		
-	}
-	return;
-}			
 
 void Serial_Init(const uint32_t BaudRate,const bool DoubleSpeed)
 	{
@@ -597,11 +557,31 @@ void PrintIntDec_(uint16_t int_val) {
 
 
 
+void timer0_init() {
+    cli(); // Здесь CLI отключает глобальные прерывания, если это необходимо.
+	GTCCR|=1<<TSM;
+    TIMSK1 =0;// (1 << OCIE1A);
+    TIMSK0 =0;// (1 << OCIE0A); // Разрешаем прерывание по совпадению с OCR0A
+    TCCR0A = 0; // Очищаем регистр TCCR0A
+    TCCR0B = 0; // Очищаем регистр TCCR0B
+    TCNT0 = 0;  // Обнуляем счетчик
+    TCCR0A |= (1 << WGM01); // 
+    TCCR0B |= (1 << CS00); // Устанавливаем предделитель на 1 (без деления)
+    TCCR1B |= (1 << WGM12);//НАСТРОЙКА НА 1 СЕКУНДУ
+    TCCR1B |= (1 << CS12);
+    TCCR1B |= (0 << CS11);
+    TCCR1B |= (0 << CS10);
+    OCR1A = 0;
+    OCR0A = 0; // 
+    OCR1A |= 62499;//
+    OCR0A |= 255;// 
+ //   OCR0A |= 159;// 
 
-
-
-
-	return ENDPOINT_RWCSTREAM_NoError_;
+    TIMSK1 |= (1 << OCIE1A);
+    TIMSK0 |= (1 << OCIE0A); // Разрешаем прерывание по совпадению с OCR0A
+	GTCCR&=~(1<<TSM);
+	while(GTCCR&(1<<PSRSYNC))asm volatile("nop");
+    sei(); // Здесь SEI включает глобальные прерывания, если это необходимо.
 }
-			
-			
+
+
