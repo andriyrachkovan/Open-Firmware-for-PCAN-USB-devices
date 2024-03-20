@@ -1,3 +1,29 @@
+const PROGMEM char my_STRING_Vendor[]={0,0,2,8,1,9,0x23,0x25,6,5,0xD4,7,0,0,0,0};
+const char frst_sms_[]=    {0x02,0x01,0x42,0x04,0x01};
+const PROGMEM char sms_1[]={0x02,0x02,0x42,0x04,0x01};
+const PROGMEM char answer_standard_head[]={0x02,0x01};
+char DLC=0;
+uint8_t i_ring_hex=0;
+uint16_t ring_hex[]=    {
+	0xC9ED,
+	0xC94D,
+	0xC9AD,
+	0xC90D,
+	0xC96D,
+	0xC9CD,
+	0xC92D,
+	0xC98D,
+	};
+char ID_standard[]={0x00,0x00};
+uint16_t COBID=0;
+
+char answer_timer[]={0,0};
+const PROGMEM char answer_data[]=
+{
+	0x11,0x22,0x33,0x44,0x55,0x66,0x77,0x88
+};
+
+
 const PROGMEM char my_ManufacturerString[] = {12,3,'e',0,'l',0,'e',0,'g',0,'y',0};
 const PROGMEM char my_EmptyString[] ={12,3,'e',0,'m',0,'p',0,'t',0,'y',0};
 const PROGMEM char my_ProductString[] = {22,3,'P',0,'E',0,'A',0,'K',0,'-',0,'C',0,'L',0,'O',0,'N',0,'E',0};
@@ -133,7 +159,6 @@ const PROGMEM char config_PEAK[]=
 	0x1,	//PollingIntervalMS
 	};
 
-uint8_t my_STRING_Vendor[]={0,0,2,8,1,9,0x23,0x25,6,5,0xD4,7,0,0,0,0};
 
 
 
@@ -144,5 +169,3 @@ uint8_t my_STRING_Vendor[]={0,0,2,8,1,9,0x23,0x25,6,5,0xD4,7,0,0,0,0};
 
 
 
-
-		
