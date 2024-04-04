@@ -99,13 +99,18 @@ char ring_buffer[]=
 	'8','n','n','n','n','n','n','n', 'n','n','n','n','n','n','n','n', 'n','n','n','n','n','n','n','n', 'n','n','n','n','n','n','8',0x0,
 	};
 uint8_t step=0;
+
+uint8_t add_tik=19;
+uint8_t FIRST_NUMBER_ts=0xED;
+
 volatile uint32_t total_micros=0;
 volatile uint32_t total_micros_DIV10=0;
 volatile uint16_t frames=0;
 volatile uint16_t prox_frame_number=0;
+volatile  uint16_t time_stamp=0;
 volatile uint16_t frame_number=0;
 volatile uint8_t microbloks=0;
-uint16_t total_micros_DIV16;
+uint32_t total_micros_DIV;
 bool time_token_loaded=false;
 bool data_token_enabled=false;
 
@@ -565,17 +570,20 @@ void timer0_init() {
     TCCR0A = 0; // Очищаем регистр TCCR0A
     TCCR0B = 0; // Очищаем регистр TCCR0B
     TCNT0 = 0;  // Обнуляем счетчик
+    TCNT1 = 0;  // Обнуляем счетчик
     TCCR0A |= (1 << WGM01); // 
-    TCCR0B |= (1 << CS00); // Устанавливаем предделитель на 1 (без деления)
-    TCCR1B |= (1 << WGM12);//НАСТРОЙКА НА 1 СЕКУНДУ
-    TCCR1B |= (1 << CS12);
+    TCCR0B |= (0 << CS00); 
+    TCCR0B |= (1 << CS01); // Устанавливаем предделитель на 8 
+    TCCR0B |= (0 << CS02); //
+    TCCR1B |= (1 << WGM12);
+    TCCR1B |= (1 << CS12);//НАСТРОЙКА ДЕЛЯТЕЛЯ НА 256
     TCCR1B |= (0 << CS11);
-    TCCR1B |= (0 << CS10);
+    TCCR1B |= (0 << CS10);//НАСТРОЙКА ДЕЛЯТЕЛЯ НА 1
     OCR1A = 0;
     OCR0A = 0; // 
-    OCR1A |= 62499;//
-    OCR0A |= 255;// 
- //   OCR0A |= 159;// 
+    OCR1A |= 3095;//
+    OCR0A |= 85;//42,5 МИКРОСЕКУНДЫ
+  //  OCR0A |= 159;// 
 
     TIMSK1 |= (1 << OCIE1A);
     TIMSK0 |= (1 << OCIE0A); // Разрешаем прерывание по совпадению с OCR0A
