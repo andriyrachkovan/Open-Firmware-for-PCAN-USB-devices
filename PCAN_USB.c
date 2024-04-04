@@ -65,34 +65,29 @@ for (;;)
 				
 				
 
-//cli();
-//				answer_timer[0]=total_micros_DIV16>>8;
-//				answer_timer[1]=total_micros_DIV16>>0;//состояние пакета времени
-//sei();
 				
-			i_ring_hex&=0b111;
-			answer_timer[0]=ring_hex[i_ring_hex-1]>>8;//старшее виртуальное время
-			answer_timer[1]=ring_hex[i_ring_hex-1];//младшее  виртуальное время из ринг массива
 
-				uint8_t d1=0;
-				uint8_t d2=0;
-				uint8_t d3=0;
-				uint8_t d4=0;
-				uint8_t d5=0;
-				uint8_t d6=0;
-				uint8_t d7=0;
-				uint8_t d8=0;
+				uint8_t d1=1;
+				uint8_t d2=2;
+				uint8_t d3=3;
+				uint8_t d4=4;
+				uint8_t d5=5;
+				uint8_t d6=6;
+				uint8_t d7=7;
+				uint8_t d8=8;
 				
 				UEDATX=DLC;
-				UEDATX=ID_standard[0];
-				UEDATX=ID_standard[1];
+				UEDATX=0x60;//ID_standard[0];
+				UEDATX=0x24;//ID_standard[1];id=0x123
 
-				UEDATX=answer_timer[0];
-				UEDATX=answer_timer[1];
+cli();
+			UEDATX=time_stamp>>8;
+			UEDATX=time_stamp;
+sei();
 
 				++num_packet;
-				UEDATX=0;
-				UEDATX=0;
+				UEDATX=num_packet>>8;//d1;
+				UEDATX=num_packet;//d2;
 				UEDATX=d3;
 				UEDATX=d4;
 				UEDATX=d5;
@@ -116,12 +111,14 @@ for (;;)
 //////////////////////////////////////////////////////////////////////////
 ISR(USB_COM_vect, ISR_BLOCK)
 {
+
 	uint8_t PrevSelectedEndpoint = UENUM;
 	uint8_t i=0;
 	UENUM=2;
 	if(UEINTX&UEIENX&IN_MASK)
 	{
 		UEINTX&=CLEAR_IN;//подтверждаем
+		if(step==1)step=2;
 		while(UEINTX&0b10000001);//ждем опустошения
 		UEIENX&=0b11111110;//выключаем прерывание
 		if(time_token_loaded)
@@ -159,14 +156,35 @@ ISR(USB_COM_vect, ISR_BLOCK)
 			if(step==0)//приглашение программы
 			{
 				UEINTX =CLEAR_OUT;
+				
 				step=1;//переходим к 0 метке
+				//ЖДЕМ 30 МС
+				uint32_t wait_30;
+				for(wait_30=0;wait_30<68485;wait_30++)asm("nop");
+				//ПЕРЕДАЕМ ПЕРВУЮ МЕТКУ
+				uint8_t tmpUENUM=UENUM;
+				UENUM=2;
+				for(i=0;i<sizeof(frst_sms_);i++)
+					UEDATX=frst_sms_[i];
+				UEDATX=time_stamp>>8;
+				UEDATX=time_stamp;
+				for(i=0;i<(64-sizeof(frst_sms_)-2);i++)
+					UEDATX=0;
+				UEINTX&=CLEAR_IN;
+				UEIENX|=1;
+				UENUM=tmpUENUM;
+				//ПОДГОТАВЛИВАЕМ ПОСЛЕДУЮЩИЕ МЕТКИ
+				for(i=0;i<5;i++)//первый елемент счетчика
+					USBtoUSART_Buffer_Data_[i]=pgm_read_byte(&sms_1[i]);
+
+			
+				//АКТИВИРУЕМ КАДР
 				UDIEN  |= (1 << SOFE);//активируем кадр
 				goto end_isr;
 			}
 			if(step==3)
 			{
 				step=0;	
-				i_ring_hex=0;
 				UEINTX =CLEAR_OUT;
 				goto end_isr;
 			}
@@ -174,8 +192,10 @@ ISR(USB_COM_vect, ISR_BLOCK)
 		if(memcmp(arrivederci_, USBtoUSART_Buffer_Data_, 4)==0)
 		{
 			step=0;	
-			i_ring_hex=0;
+			frames=0;
 			LED2_OFF;
+			UDIEN  &= ~(1 << SOFE);//дизактивируем кадр
+
 			UEINTX =CLEAR_OUT;
 			goto end_isr;
 		}
@@ -199,18 +219,12 @@ end_isr:
 //проверено
 ISR(TIMER0_COMPA_vect,ISR_BLOCK) 
 {
-//	total_micros=total_micros+16;
-	++total_micros_DIV16;
-	asm("nop");
-	if(++microbloks==100)
-	{
-		microbloks=0;
-	}
-	asm("nop");
 }
 
 ISR(TIMER1_COMPA_vect,ISR_BLOCK) 
 {
+add_tik = (add_tik == 19) ? 13 : 19;
+time_stamp-=add_tik;
 }
 
 
@@ -228,16 +242,35 @@ ISR(USB_GEN_vect, ISR_BLOCK)
 	{
 		UDINT  &= ~(1 << SOFI);//подтверждаем кадр
 		{
-			frame_number=(UDFNUMH<<8)|(UDFNUML);
-			first_frame();//нулевая метка
+
+//ПЕРЕДАЕМ ПЕРВЫЙ РАЗ ПРАВИЛЬНУЮ МЕТКУ
+			if(UENUM==2&&step==2&&(++frames==1000))
+			{
+			step=3;		
 			
-				if(++frames==1000)
-				{
+			frames=0;
+			time_stamp=0xC8ED;//ЗАДАЕМ НАЧАЛЬНУЮ ПРАВИЛЬНУЮ МЕТКУ
+			uint16_t tst=time_stamp; 
+			if(!(tst%2))tst+=13;
+			
+			for(i=0;i<5;i++)
+					UEDATX=USBtoUSART_Buffer_Data_[i];//шапка пакета метки
+			UEDATX=tst>>8;
+			UEDATX=tst;
+			UEDATX=0x40;//размер пакета времени
+			UEDATX=0x01;//ошибки
+			for(i=0;i<55;i++)
+				UEDATX=0;
+			UEINTX&=CLEAR_IN;
+			UEIENX|=1;
+			}
+			 
+			if(UENUM==2&&step==3&&(++frames==1000))
+			{
 				frames=0;
-				LED2_ALTERNATE;
 				process_frames();
 				time_token_loaded=true;
-				}
+			}
 		}
 		
 
@@ -284,53 +317,24 @@ ISR(USB_GEN_vect, ISR_BLOCK)
 
 process_frames()
 {
-	uint8_t tmpUENUM=UENUM;
-	UENUM=2;
-	if(step==3)
-		{
 			for(i=0;i<5;i++)
 				UEDATX=USBtoUSART_Buffer_Data_[i];//шапка пакета метки
+			uint16_t tst=time_stamp; 
+			if(!(tst%2))tst+=13;
+
+			UEDATX=tst>>8;
+			UEDATX=tst;
 
 
-			i_ring_hex&=0b111;
-			UEDATX=ring_hex[i_ring_hex]>>8;//старшее виртуальное время
-			UEDATX=ring_hex[i_ring_hex];//младшее  виртуальное время из ринг массива
-			i_ring_hex++;
-
-			UEDATX=0x40;//состояние пакета времени
-			UEDATX=0x01;//состояние пакета времени
+			UEDATX=0x40;//размер пакета времени
+			UEDATX=0x01;//ошибки
 			for(i=0;i<55;i++)
 				UEDATX=0;
 
 			
 			UEINTX&=CLEAR_IN;
 			UEIENX|=1;
-		}
-	UENUM=tmpUENUM;
+			step=3;
+		
 }
 
-void first_frame()
-{
-	uint8_t tmpUENUM=UENUM;
-	UENUM=2;
-	if(step==1)//нулевая метка
-		{
-			prox_frame_number=(frame_number+1000)&0x7FF;
-			step=2;
-			for(i=0;i<sizeof(frst_sms_);i++)
-				UEDATX=frst_sms_[i];
-			UEDATX=(total_micros_DIV16>>8)&0xFF;
-			UEDATX=total_micros_DIV16&0xFF;
-			for(i=0;i<(64-sizeof(frst_sms_)-2);i++)
-				UEDATX=0;
-			UEINTX&=CLEAR_IN;
-			UEIENX|=1;
-		}
-	if(step==2)
-		{
-			step=3;
-			for(i=0;i<5;i++)//первый елемент счетчика
-				USBtoUSART_Buffer_Data_[i]=pgm_read_byte(&sms_1[i]);
-		}
-	UENUM=tmpUENUM;
-}
