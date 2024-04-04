@@ -1,19 +1,10 @@
-const PROGMEM char my_STRING_Vendor[]={0,0,2,8,1,9,0x23,0x25,6,5,0xD4,7,0,0,0,0};
+//const PROGMEM char my_STRING_Vendor[]={0,0,2,8,1,9,0x23,0x25,6,5,0xD4,7,0,0,0,0};//строка для пикан
+//const PROGMEM char my_STRING_Vendor[]={0,0,8,4,0,8,0x7,0x00, 0x4,2,0xe0,7,1,0,0,0};//строка для кантакт
+const PROGMEM char my_STRING_Vendor[]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};//строка для кантакт
 const char frst_sms_[]=    {0x02,0x01,0x42,0x04,0x01};
 const PROGMEM char sms_1[]={0x02,0x02,0x42,0x04,0x01};
 const PROGMEM char answer_standard_head[]={0x02,0x01};
 char DLC=0;
-uint8_t i_ring_hex=0;
-uint16_t ring_hex[]=    {
-	0xC9ED,
-	0xC94D,
-	0xC9AD,
-	0xC90D,
-	0xC96D,
-	0xC9CD,
-	0xC92D,
-	0xC98D,
-	};
 char ID_standard[]={0x00,0x00};
 uint16_t COBID=0;
 
@@ -92,20 +83,22 @@ my_USB_Request_Header_t my_USB_ControlRequest;
 
 const PROGMEM char descriptor_PEAK[]=
 	{	
-	18,			//Size
+	0x12,			//Size
 	1,			//Type
-	0x00,0x01,	//USBSpecification
+	0x00,		//USBSpecification
+	0x01,	
 	0x00,		//Class
 	0x00,		//SubClass
 	0x00,		//Protocol
 	0x10,		//Endpoint0Size
-	0x72,0x0C,	//VendorID
+	0x72,0x0C,	//VendorID   PCAN
 	0x0C,0x00,	//ProductID
 	0x00,0x1C,	//ReleaseNumber
 	0x00,		//ManufacturerStrIndex
 	0x03,		//ProductStrIndex
 	0x00,		//SerialNumStrIndex
 	0x03		//NumberOfConfigurations
+	
 	};      
 //////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////
